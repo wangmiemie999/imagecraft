@@ -1,4 +1,6 @@
 .back-link{font-size:12px;color:var(--blue);text-decoration:none}
+.floating-back-link{position:fixed;right:clamp(18px,4vw,44px);bottom:clamp(18px,4vw,38px);z-index:20;height:46px;padding:0 18px;border:1px solid var(--line);border-radius:999px;background:#fff;box-shadow:0 14px 38px rgba(21,21,21,.12);display:flex;align-items:center;justify-content:center;color:var(--ink);font-weight:700}
+.floating-back-link:hover{border-color:var(--ink);transform:translateY(-1px)}
 .character-main{padding-bottom:80px}
 .character-intro{padding:70px 0 42px}
 .character-intro h1{font-family:Georgia,"Songti SC",serif;font-size:clamp(42px,6vw,72px);line-height:1.08;letter-spacing:-.05em;margin:0;font-weight:500}
@@ -82,7 +84,7 @@
 .profile-template[data-profile="custom"] b{padding:0 9px}
 .profile-template[data-profile="custom"] small{padding:0 9px 9px}
 .profile-icon.custom{height:calc(100% - 48px);min-height:138px;width:100%;align-self:stretch;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#fff7ed,#f8f3ea);color:var(--orange);z-index:0;overflow:hidden}
-.profile-icon.custom:before{background:#fff;border:1px solid #eadfd3;border-radius:20px;width:min(58%,158px);height:42%;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-2deg);box-shadow:0 14px 30px rgba(0,0,0,.06)}
+.profile-icon.custom:before{background:#fff;border:1px solid #eadfd3;border-radius:18px;width:min(58%,158px);height:42%;top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 14px 30px rgba(0,0,0,.06)}
 .profile-icon.custom:after{content:"";position:absolute;width:36px;height:36px;border:3px solid var(--orange);border-radius:50%;left:50%;top:50%;transform:translate(-50%,-62%);background:radial-gradient(circle at 50% 50%,transparent 0 6px,var(--orange) 7px 8px,transparent 9px)}
 .profile-icon.custom i{position:absolute;width:62px;height:22px;border:3px solid var(--orange);border-top:0;border-radius:0 0 30px 30px;left:50%;top:50%;transform:translate(-50%,20%);opacity:.7}
 .profile-icon{z-index:1}.profile-icon:before{z-index:-1}

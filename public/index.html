@@ -14,6 +14,9 @@
         <span class="brand-logo" aria-hidden="true"><b>图</b><i></i></span>
         <span>拾图工坊</span>
       </a>
+      <div class="account-area" id="accountArea">
+        <button class="account-entry" id="openAuth" type="button">登录 / 注册</button>
+      </div>
     </header>
 
     <main>
@@ -56,13 +59,12 @@
             </div>
             <div class="preset-grid two-styles" id="presetGrid">
               <button class="preset active" data-preset="xiaohei" type="button"><span class="preset-art meimei"><img src="/characters/meimei-avatar.png" alt="" /></span><b>咩咩极简线稿</b><small>细线 · 纯白 · 克制</small></button>
-              <button class="preset" data-preset="crayon" type="button"><span class="preset-art meimei guoman-look"><img src="/characters/meimei-avatar.png" alt="" /></span><b>咩咩国漫线稿风</b><small>柔和 · 细腻 · 东方感</small></button>
+              <a class="character-jump role-card" href="/character.html">
+                <span class="character-create-placeholder" aria-hidden="true"><i>＋</i></span>
+                <span><b>创建新角色</b><small id="characterStatus">从照片生成你的专属插图角色</small></span>
+                <strong>进入角色工作室 →</strong>
+              </a>
             </div>
-            <a class="character-jump" href="/character.html">
-              <span class="character-jump-avatar"><img src="/characters/meimei-avatar.png" alt="咩咩" /></span>
-              <span><b>塑造自己的插图角色</b><small id="characterStatus">当前使用：预设角色</small></span>
-              <strong>进入角色工作室 →</strong>
-            </a>
             <section class="character-library" aria-labelledby="characterLibraryTitle">
               <div class="character-library-head">
                 <h4 id="characterLibraryTitle">选择插图角色</h4>
@@ -76,7 +78,7 @@
           <div class="settings">
             <label for="count">想生成几张？</label>
             <div class="count-picker" id="countPicker">
-              <button data-count="2">2</button><button data-count="3">3</button><button class="active" data-count="4">4</button><button data-count="5">5</button><button data-count="6">6</button>
+              <button class="active" data-count="1">1</button><button data-count="2">2</button><button data-count="3">3</button><button data-count="4">4</button><button data-count="5">5</button><button data-count="6">6</button>
             </div>
           </div>
           <button class="primary" id="planButton"><span>分析文章，寻找锚点</span><b>→</b></button>
@@ -109,6 +111,48 @@
     </main>
 
     <footer><span>咩咩负责把难懂的东西画得清楚又好看。</span><span>16:9 · 纯白手绘 · 极简而灵动</span></footer>
+    <div class="auth-modal" id="authModal" hidden>
+      <div class="auth-backdrop" data-auth-close></div>
+      <section class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <button class="auth-close" data-auth-close type="button" aria-label="关闭">×</button>
+        <div class="auth-head">
+          <p class="eyebrow">LOCAL ACCOUNT MVP</p>
+          <h2 id="authTitle">拾图工坊账户</h2>
+          <p>用于演示手机号注册登录流程，当前版本仅保存在本地浏览器，验证码为本地演示验证码。</p>
+        </div>
+        <div class="auth-tabs" role="tablist">
+          <button class="active" data-auth-tab="login" type="button">登录</button>
+          <button data-auth-tab="register" type="button">注册</button>
+          <button data-auth-tab="profile" type="button">个人中心</button>
+        </div>
+        <form class="auth-form active" id="loginForm" data-auth-panel="login">
+          <label>手机号<input id="loginName" autocomplete="username" inputmode="tel" placeholder="输入手机号" /></label>
+          <label>密码<input id="loginPassword" type="password" autocomplete="current-password" placeholder="输入密码" /></label>
+          <button class="primary auth-submit" type="submit"><span>登录</span><b>→</b></button>
+        </form>
+        <form class="auth-form" id="registerForm" data-auth-panel="register">
+          <div class="auth-switch-line">已有账号？<button data-auth-tab-link="login" type="button">去登录</button></div>
+          <label>手机号
+            <span class="code-row">
+              <input id="registerPhone" maxlength="11" autocomplete="tel" inputmode="tel" placeholder="请输入手机号" />
+              <button id="sendCodeButton" type="button">获取验证码</button>
+            </span>
+          </label>
+          <label>短信验证码<input id="registerCode" maxlength="6" inputmode="numeric" placeholder="请输入短信验证码" /></label>
+          <label>设置密码<input id="registerPassword" type="password" minlength="4" autocomplete="new-password" placeholder="至少 4 位" /></label>
+          <label>确认密码<input id="registerPasswordConfirm" type="password" minlength="4" autocomplete="new-password" placeholder="再次输入密码" /></label>
+          <label class="agreement-line"><input id="registerAgreement" type="checkbox" /> <span>同意《用户协议》《隐私政策》</span></label>
+          <button class="primary auth-submit" type="submit"><span>立即注册</span><b>→</b></button>
+        </form>
+        <form class="auth-form" id="profileForm" data-auth-panel="profile">
+          <div class="profile-empty" id="profileEmpty">还没有登录。请先登录或注册一个本地账户。</div>
+          <div class="profile-fields" id="profileFields" hidden>
+            <label>当前手机号<input id="profileName" disabled /></label>
+            <div class="profile-empty">MVP 阶段只保存登录状态。后续接入真实短信服务和数据库后，可继续扩展头像、会员权益、作品集等功能。</div>
+          </div>
+        </form>
+      </section>
+    </div>
     <div class="toast" id="toast" role="status"></div>
     <script type="module" src="/app.js"></script>
   </body>

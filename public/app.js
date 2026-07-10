@@ -1,12 +1,13 @@
 const styleOptions = {
-  xiaohei: { preset: "xiaohei", line: "fine", background: "white", whitespace: "spacious", accent: "#ff6b20", custom: "" },
-  crayon: { preset: "crayon", line: "fine", background: "white", whitespace: "spacious", accent: "#8c8c86", custom: "Chinese animation line-art character style: softer face shape, delicate dense hair strands, elegant flowing clothing lines, black-and-white ink linework with very light gray shading, subtle Eastern aesthetic, while keeping the same character identity." }
+  xiaohei: { preset: "xiaohei", line: "fine", background: "white", whitespace: "spacious", accent: "#ff6b20", custom: "" }
 };
 const savedStyle = localStorage.getItem("meimei-style");
 const defaultStyle = { ...(styleOptions[savedStyle] || styleOptions.xiaohei) };
 const defaultCharacter = { id: "meimei", enabled: true, archetype: "custom", name: "咩咩", shape: "bean", eyes: "dots", expression: "curious", accessory: "none", personality: "温柔、专注、安静好奇", custom: "极简黑白手绘女性角色；始终保留高盘发、额前弧形碎发和两侧松散发丝；只使用少量橙色点缀", referenceUrl: "/characters/meimei.png" };
 const LIBRARY_KEY = "peitu-character-library";
 const SELECTED_CHARACTER_KEY = "peitu-selected-character-id";
+const USERS_KEY = "shitu-users";
+const SESSION_USER_KEY = "shitu-current-user";
 function readCharacterLibrary() {
   let library = [];
   try {
@@ -26,8 +27,10 @@ function readCharacterLibrary() {
 let characterLibrary = readCharacterLibrary();
 const selectedCharacterId = localStorage.getItem(SELECTED_CHARACTER_KEY);
 const savedCharacter = characterLibrary.find((item) => item.id === selectedCharacterId) || characterLibrary[0] || defaultCharacter;
-const state = { step: 1, count: 4, shots: [], results: [], style: { ...defaultStyle, character: savedCharacter }, character: savedCharacter };
+const state = { step: 1, count: 1, shots: [], results: [], style: { ...defaultStyle, character: savedCharacter }, character: savedCharacter };
 let characterSearchTerm = "";
+let demoSmsCode = "";
+let demoSmsPhone = "";
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -89,6 +92,120 @@ function escapeHtml(text = "") {
   return String(text).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
 }
 
+function readUsers() {
+  try {
+    const users = JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
+    return Array.isArray(users) ? users : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsers(users) {
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+function currentUser() {
+  const name = localStorage.getItem(SESSION_USER_KEY);
+  return readUsers().find((user) => user.name === name) || null;
+}
+
+function openAuth(tab = currentUser() ? "profile" : "login") {
+  $("#authModal").hidden = false;
+  setAuthTab(tab);
+  renderAccount();
+}
+
+function closeAuth() {
+  $("#authModal").hidden = true;
+}
+
+function setAuthTab(tab) {
+  $$(".auth-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.authTab === tab));
+  $$(".auth-form").forEach((panel) => panel.classList.toggle("active", panel.dataset.authPanel === tab));
+  if (tab === "profile") renderProfileForm();
+}
+
+function renderAccount() {
+  const user = currentUser();
+  const area = $("#accountArea");
+  if (!area) return;
+  area.innerHTML = user ? `
+    <button class="account-entry signed-in" id="openAuth" type="button"><span>${escapeHtml(user.name)}</span><small>个人中心</small></button>
+    <button class="account-logout" id="logoutButton" type="button">退出</button>
+  ` : `<button class="account-entry" id="openAuth" type="button">登录 / 注册</button>`;
+  $("#openAuth")?.addEventListener("click", () => openAuth(user ? "profile" : "login"));
+  $("#logoutButton")?.addEventListener("click", () => {
+    localStorage.removeItem(SESSION_USER_KEY);
+    renderAccount();
+    renderProfileForm();
+    toast("已退出登录");
+  });
+}
+
+function renderProfileForm() {
+  const user = currentUser();
+  const empty = $("#profileEmpty");
+  const fields = $("#profileFields");
+  if (!empty || !fields) return;
+  empty.hidden = Boolean(user);
+  fields.hidden = !user;
+  if (!user) return;
+  $("#profileName").value = user.name;
+}
+
+function registerUser(event) {
+  event.preventDefault();
+  const name = $("#registerPhone").value.trim();
+  const code = $("#registerCode").value.trim();
+  const password = $("#registerPassword").value;
+  const confirmPassword = $("#registerPasswordConfirm").value;
+  if (!/^1\d{10}$/.test(name)) return toast("请输入 11 位手机号");
+  if (!demoSmsCode || demoSmsPhone !== name) return toast("请先获取验证码");
+  if (code !== demoSmsCode) return toast("验证码不正确");
+  if (password.length < 4) return toast("密码至少 4 位");
+  if (password !== confirmPassword) return toast("两次密码不一致");
+  if (!$("#registerAgreement").checked) return toast("请先同意用户协议和隐私政策");
+  const users = readUsers();
+  if (users.some((user) => user.name === name)) return toast("这个手机号已经注册");
+  users.push({ name, phone: name, password, createdAt: new Date().toISOString() });
+  saveUsers(users);
+  localStorage.setItem(SESSION_USER_KEY, name);
+  demoSmsCode = "";
+  demoSmsPhone = "";
+  $("#registerForm").reset();
+  renderAccount();
+  setAuthTab("profile");
+  toast("注册成功，已登录");
+}
+
+function loginUser(event) {
+  event.preventDefault();
+  const name = $("#loginName").value.trim();
+  const password = $("#loginPassword").value;
+  const user = readUsers().find((item) => item.name === name && item.password === password);
+  if (!user) return toast("账户名或密码不正确");
+  localStorage.setItem(SESSION_USER_KEY, user.name);
+  $("#loginForm").reset();
+  renderAccount();
+  setAuthTab("profile");
+  toast(`欢迎回来，${user.name}`);
+}
+
+function saveProfile(event) {
+  event.preventDefault();
+  toast("MVP 阶段暂无可保存资料");
+}
+
+function sendDemoCode() {
+  const phone = $("#registerPhone").value.trim();
+  if (!/^1\d{10}$/.test(phone)) return toast("请先输入 11 位手机号");
+  demoSmsPhone = phone;
+  demoSmsCode = String(Math.floor(100000 + Math.random() * 900000));
+  $("#registerCode").value = demoSmsCode;
+  toast(`演示验证码：${demoSmsCode}`);
+}
+
 function renderCharacterLibrary() {
   const grid = $("#characterLibraryGrid");
   if (!grid) return;
@@ -118,9 +235,8 @@ function renderCharacterLibrary() {
       <small>去角色工作室创建你的专属角色</small>
     </a>`;
   grid.innerHTML = rows || empty;
-  $("#characterStatus").textContent = `当前使用：${state.character.name || "专属角色"}`;
+  $("#characterStatus").textContent = "从照片生成你的专属插图角色";
   $("#selectedCharacterLine").textContent = `当前使用：${state.character.name || "专属角色"}`;
-  $(".character-jump-avatar img").src = state.character.referenceUrl || "/characters/meimei-avatar.png";
   $("#generateButton span").textContent = `让${state.character.name || "角色"}开工`;
 }
 
@@ -197,6 +313,19 @@ $("#characterSearch").addEventListener("input", (event) => {
 });
 $(".character-jump").addEventListener("click", () => sessionStorage.setItem("xiaohei-article-draft", $("#article").value));
 $("#sampleButton").addEventListener("click", () => { $("#article").value = sample; syncArticle(); toast("示例文章已放入"); });
+$("#accountArea")?.addEventListener("click", (event) => {
+  if (event.target.closest("#openAuth")) openAuth(currentUser() ? "profile" : "login");
+});
+$$("[data-auth-close]").forEach((item) => item.addEventListener("click", closeAuth));
+$$(".auth-tabs button").forEach((button) => button.addEventListener("click", () => setAuthTab(button.dataset.authTab)));
+$$("[data-auth-tab-link]").forEach((button) => button.addEventListener("click", () => setAuthTab(button.dataset.authTabLink)));
+$("#sendCodeButton")?.addEventListener("click", sendDemoCode);
+$("#registerForm")?.addEventListener("submit", registerUser);
+$("#loginForm")?.addEventListener("submit", loginUser);
+$("#profileForm")?.addEventListener("submit", saveProfile);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("#authModal")?.hidden) closeAuth();
+});
 $("#countPicker").addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -232,7 +361,8 @@ request("/api/status").then((status) => {
   $("#modeText").textContent = live ? `在线生图 · ${status.model}` : "演示模式";
 }).catch(() => { if ($("#modeText")) $("#modeText").textContent = "服务未连接"; });
 
-if (state.character?.enabled) $(".character-jump").classList.add("has-character");
 $$("#presetGrid .preset").forEach((item) => item.classList.toggle("active", item.dataset.preset === state.style.preset));
 renderCharacterLibrary();
+renderAccount();
+renderProfileForm();
 syncArticle();

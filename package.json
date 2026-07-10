@@ -1,7 +1,8 @@
 {
-  "name": "xiaohei-web",
+  "name": "shitu-workshop",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "description": "拾图工坊：中文文章插图生成与自定义角色工作室",
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",

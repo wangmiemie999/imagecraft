@@ -82,11 +82,12 @@ function writeForm(character) {
 function render() {
   const character = readForm();
   const isCustomProfile = profileMode === "custom";
+  const previewUrl = isCustomProfile && !character.referenceUrl ? profiles.meimei.referenceUrl : character.referenceUrl;
   const figure = $("#characterFigure");
   figure.className = `character-figure archetype-${character.archetype}`;
-  figure.style.backgroundImage = character.referenceUrl ? `url(${character.referenceUrl})` : "";
-  figure.classList.toggle("reference-character", Boolean(character.referenceUrl));
-  $("#characterSpec").textContent = isCustomProfile ? `${character.name} · 照片生成 · 极简手绘 · 黑白线稿` : `${character.name} · ${labels.proportion[character.proportion]} · ${labels.preserve[character.preserve]} · ${labels.outfit[character.outfit]} · ${labels.signature[character.signature]}`;
+  figure.style.backgroundImage = previewUrl ? `url(${previewUrl})` : "";
+  figure.classList.toggle("reference-character", Boolean(previewUrl));
+  $("#characterSpec").textContent = isCustomProfile ? `${character.name} · 默认预览咩咩 · 上传照片后替换` : `${character.name} · ${labels.proportion[character.proportion]} · ${labels.preserve[character.preserve]} · ${labels.outfit[character.outfit]} · ${labels.signature[character.signature]}`;
   $("#figureNote").textContent = character.personality || "认真，但不知道为什么这么认真。";
   document.querySelectorAll(".advanced-character-fields").forEach((group) => { group.hidden = isCustomProfile; });
   $("#photoUpload").hidden = !isCustomProfile;
@@ -147,10 +148,5 @@ $("#generateCharacter").addEventListener("click", async () => {
   finally { button.disabled = false; render(); }
 });
 
-try {
-  const stored = JSON.parse(localStorage.getItem("xiaohei-character") || "null");
-  const base = stored?.referenceUrl === "/characters/meimei.png" ? profiles.meimei : profiles.custom;
-  const saved = !stored?.referenceUrl || stored.name === "小黑" ? defaults : { ...base, ...stored };
-  generatedCharacterUrl = saved.referenceUrl || ""; writeForm(saved);
-  hideGeneratedPanel();
-} catch { writeForm(defaults); }
+writeForm(defaults);
+hideGeneratedPanel();
