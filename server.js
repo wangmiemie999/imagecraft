@@ -18,6 +18,13 @@ const RUNNINGHUB_WORKFLOW_ID = process.env.RUNNINGHUB_WORKFLOW_ID || "";
 const RUNNINGHUB_IMAGE_NODE_ID = process.env.RUNNINGHUB_IMAGE_NODE_ID || "111";
 const RUNNINGHUB_OUTPUT_NODE_ID = process.env.RUNNINGHUB_OUTPUT_NODE_ID || "201";
 const RUNNINGHUB_BASE_URL = "https://www.runninghub.cn";
+const rateBuckets = new Map();
+const RATE_LIMITS = {
+  "/api/plan": { limit: 20, windowMs: 60_000, label: "文章分析" },
+  "/api/generate": { limit: 8, windowMs: 60_000, label: "图片生成" },
+  "/api/character/simple": { limit: 3, windowMs: 60_000, label: "角色生成" },
+  "/api/character/runninghub": { limit: 3, windowMs: 60_000, label: "角色生成" }
+};
 const RUNNINGHUB_VIEW_PROMPTS = {
   "214": "白色背景。生成角色上半身正视图，姿势参考图二。",
   "215": "白色背景。生成角色全身的正视图，姿势参考图二。",
@@ -55,7 +62,82 @@ async function body(req) {
     if (size > 15_000_000) throw new Error("请求内容过大，请使用 10MB 以内的照片");
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    const error = new Error("请求提交失败，请刷新页面后重试");
+    error.status = 400;
+    throw error;
+  }
+}
+
+function clientKey(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || req.socket.remoteAddress || "unknown";
+}
+
+function applyRateLimit(req, res, pathname) {
+  const rule = RATE_LIMITS[pathname];
+  if (!rule) return false;
+  const now = Date.now();
+  const key = `${pathname}:${clientKey(req)}`;
+  const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + rule.windowMs };
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + rule.windowMs;
+  }
+  bucket.count += 1;
+  rateBuckets.set(key, bucket);
+  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  res.setHeader("x-ratelimit-limit", String(rule.limit));
+  res.setHeader("x-ratelimit-remaining", String(Math.max(0, rule.limit - bucket.count)));
+  res.setHeader("x-ratelimit-reset", String(retryAfter));
+  if (bucket.count <= rule.limit) return false;
+  res.setHeader("retry-after", String(retryAfter));
+  json(res, 429, {
+    error: `${rule.label}请求太频繁，请 ${retryAfter} 秒后再试。`,
+    code: "RATE_LIMITED",
+    retryAfter
+  });
+  return true;
+}
+
+function friendlyErrorMessage(error) {
+  const raw = String(error?.message || error || "");
+  if (/billing hard limit|quota|insufficient|credits?|余额|额度|payment|limit has been reached/i.test(raw)) {
+    return "当前图片生成服务暂时不可用，请稍后再试或联系管理员。";
+  }
+  if (/unauthorized|invalid api key|api key|401|403|forbidden|authentication/i.test(raw)) {
+    return "图片生成服务配置异常，请联系管理员处理。";
+  }
+  if (/rate limit|too many requests|429/i.test(raw)) {
+    return "图片服务请求太频繁，请稍等后重试。";
+  }
+  if (/size|pixel|dimension|resolution|尺寸|像素/i.test(raw)) {
+    return "图片尺寸暂时不被当前模型支持，系统已尝试自动适配；请稍后重试或换一张图片。";
+  }
+  if (/content policy|safety|moderation|unsafe|violat/i.test(raw)) {
+    return "内容可能触发了模型安全限制，请调整文章内容、角色照片或提示描述后重试。";
+  }
+  if (/fetch failed|network|timeout|ENOTFOUND|ECONNRESET|ETIMEDOUT/i.test(raw)) {
+    return "连接图片服务失败，请检查网络或稍后重试。";
+  }
+  if (/没有返回图像数据|没有返回角色图像数据/i.test(raw)) {
+    return "图片模型暂时没有返回结果，请稍后重试。";
+  }
+  if (/OPENROUTER_API_KEY|尚未配置|未配置/i.test(raw)) {
+    return "图片生成服务暂未启用，请联系管理员处理。";
+  }
+  return raw || "服务器出错了，请稍后重试。";
+}
+
+function errorStatus(error) {
+  if (Number(error?.status)) return Number(error.status);
+  const message = String(error?.message || "");
+  if (/至少|缺少|请先|不能超过|格式|上传|无效/.test(message)) return 400;
+  if (/rate limit|too many requests|请求太频繁/i.test(message)) return 429;
+  if (/unauthorized|invalid api key|401|403|forbidden|authentication/i.test(message)) return 502;
+  return 500;
 }
 
 function runningHubHeaders(jsonBody = false) {
@@ -142,12 +224,12 @@ async function generateImage(shot, style) {
       authorization: `Bearer ${API_KEY}`,
       "content-type": "application/json",
       "HTTP-Referer": `http://127.0.0.1:${PORT}`,
-      "X-Title": "Shitu Workshop"
+      "X-Title": "Illustration Workshop"
     },
     body: JSON.stringify(requestBody)
   });
 
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload?.error?.message || payload?.message || `OpenRouter 请求失败（HTTP ${response.status}）`;
     throw new Error(message);
@@ -229,7 +311,7 @@ async function createSimpleCharacter(imageData, settings = {}) {
         authorization: `Bearer ${API_KEY}`,
         "content-type": "application/json",
         "HTTP-Referer": `http://127.0.0.1:${PORT}`,
-        "X-Title": "Shitu Workshop"
+        "X-Title": "Illustration Workshop"
       },
       body: JSON.stringify({
         model: IMAGE_MODEL,
@@ -259,6 +341,7 @@ async function createSimpleCharacter(imageData, settings = {}) {
 }
 
 async function api(req, res, pathname) {
+  if (req.method !== "GET" && applyRateLimit(req, res, pathname)) return;
   if (req.method === "GET" && pathname === "/api/status") {
     return json(res, 200, { mode: API_KEY ? "live" : "demo", provider: "openrouter", model: IMAGE_MODEL, runninghub: Boolean(RUNNINGHUB_API_KEY && RUNNINGHUB_WORKFLOW_ID) });
   }
@@ -315,11 +398,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404).end("Not found");
   } catch (error) {
     console.error(error);
-    json(res, 500, { error: error.message || "服务器出错了" });
+    json(res, errorStatus(error), { error: friendlyErrorMessage(error), detail: process.env.NODE_ENV === "production" ? undefined : error.message || String(error) });
   }
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`拾图工坊已启动：http://127.0.0.1:${PORT}`);
+  console.log(`插图工坊已启动：http://127.0.0.1:${PORT}`);
   console.log(API_KEY ? `OpenRouter 在线模式 · ${IMAGE_MODEL}` : "演示模式 · 配置 OPENROUTER_API_KEY 后启用真实生图");
 });

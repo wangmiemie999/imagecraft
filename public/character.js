@@ -29,16 +29,25 @@ function hideGeneratedPanel() {
   $("#generationStatus").textContent = "";
 }
 
+function resetPhotoUpload() {
+  $("#characterPhoto").value = "";
+  $("#photoPreview").removeAttribute("src");
+  $("#photoPreviewWrap").hidden = true;
+  $("#clearPhoto").hidden = true;
+  $("#photoPlaceholder").hidden = false;
+  hideGeneratedPanel();
+}
+
 function saveCharacter() {
   const character = readForm();
   if (profileMode === "custom" && !character.referenceUrl) {
-    toast("请先生成角色定妆图，再保存用于插图");
+    toast("请先生成角色定妆照，再保存到角色库");
     return;
   }
   const savedCharacter = saveToCharacterLibrary(character);
   localStorage.setItem("xiaohei-character", JSON.stringify(savedCharacter));
   localStorage.setItem(SELECTED_CHARACTER_KEY, savedCharacter.id);
-  toast("角色已保存到角色库，正在返回文章页");
+  toast("已保存到我的角色库，并设为当前插图角色");
   setTimeout(() => { location.href = "/"; }, 650);
 }
 
@@ -92,8 +101,7 @@ function render() {
   document.querySelectorAll(".advanced-character-fields").forEach((group) => { group.hidden = isCustomProfile; });
   $("#photoUpload").hidden = !isCustomProfile;
   $("#saveCharacter").hidden = isCustomProfile && !character.referenceUrl;
-  $("#generateCharacter span").textContent = isCustomProfile ? "上传照片生成角色定妆图" : "生成一张角色定妆图";
-  $("#generateCharacter small").textContent = isCustomProfile ? "由 OpenRouter 生成单张角色定稿图" : "由 OpenRouter 生成";
+  $("#generateCharacter span").textContent = "确认生成角色定妆照";
 }
 
 async function request(url, options) {
@@ -106,18 +114,19 @@ $("#profileTemplates").addEventListener("click", (event) => {
   const button = event.target.closest(".profile-template");
   if (!button) return;
   writeForm(profiles[button.dataset.profile]);
-  $("#photoPlaceholder").hidden = false;
-  $("#photoPreview").hidden = true;
-  hideGeneratedPanel();
+  resetPhotoUpload();
 });
 $("#characterForm").addEventListener("submit", (event) => { event.preventDefault(); });
 $("#saveCharacter").addEventListener("click", saveCharacter);
 $("#resetCharacter").addEventListener("click", () => writeForm(defaults));
+$("#clearPhoto").addEventListener("click", resetPhotoUpload);
 $("#characterPhoto").addEventListener("change", () => {
   const file = $("#characterPhoto").files[0];
   if (!file) return;
   $("#photoPlaceholder").hidden = true;
-  const preview = $("#photoPreview"); preview.src = URL.createObjectURL(file); preview.hidden = false;
+  const preview = $("#photoPreview"); preview.src = URL.createObjectURL(file);
+  $("#photoPreviewWrap").hidden = false;
+  $("#clearPhoto").hidden = false;
   hideGeneratedPanel();
 });
 
@@ -143,7 +152,7 @@ $("#generateCharacter").addEventListener("click", async () => {
     generatedCharacterUrl = result.url;
     const target = $("#generatedCharacter"); target.hidden = false; target.innerHTML = `<img src="${result.url}" alt="${character.name}角色定妆图" /><a href="${result.url}" download="character-${character.name}.png">下载定妆图 ↓</a>`;
     $("#saveCharacter").hidden = false;
-    $("#generationStatus").textContent = "角色定妆图已生成，保存档案后即可使用。";
+    $("#generationStatus").textContent = "角色定妆照已生成。满意后点击“保存到我的角色库”，首页生成配图时会自动使用它。";
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; render(); }
 });

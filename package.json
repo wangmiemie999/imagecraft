@@ -1,8 +1,8 @@
 {
-  "name": "shitu-workshop",
+  "name": "illustration-workshop",
   "version": "1.0.0",
   "private": false,
-  "description": "拾图工坊：中文文章插图生成与自定义角色工作室",
+  "description": "插图工坊：中文文章插图生成与自定义角色工作室",
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",

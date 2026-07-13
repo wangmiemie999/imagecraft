@@ -1,6 +1,6 @@
-# 拾图工坊 Shitu Workshop
+# 插图工坊 Illustration Workshop
 
-拾图工坊是一个本地优先的中文文章配图生成工具。用户可以粘贴文章、选择插图角色、选择生成张数，并通过 OpenRouter 图像模型生成 16:9 文章插图。
+插图工坊是一个本地优先的中文文章配图生成工具。用户可以粘贴文章、选择插图角色、选择生成张数，并通过 OpenRouter 图像模型生成 16:9 文章插图。
 
 当前版本包含：
 
@@ -20,8 +20,8 @@
 - Node.js 20+
 
 ```bash
-git clone https://github.com/wangmiemie999/shitu-workshop.git
-cd shitu-workshop
+git clone https://github.com/wangmiemie999/shitu-workshop.git illustration-workshop
+cd illustration-workshop
 cp .env.example .env
 npm start
 ```
@@ -71,13 +71,13 @@ npm test
 构建镜像：
 
 ```bash
-docker build -t shitu-workshop .
+docker build -t illustration-workshop .
 ```
 
 运行：
 
 ```bash
-docker run --env-file .env -p 4173:4173 shitu-workshop
+docker run --env-file .env -p 4173:4173 illustration-workshop
 ```
 
 访问：

@@ -3,13 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>角色塑造工作室 · 拾图工坊</title>
+    <title>角色塑造工作室 · 插图工坊</title>
+    <script>
+      if (location.protocol === "file:") location.replace("http://127.0.0.1:4173/character.html");
+    </script>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/character.css" />
   </head>
   <body class="character-page">
     <header class="topbar">
-      <a class="brand" href="/"><span class="brand-logo" aria-hidden="true"><b>图</b><i></i></span><span>拾图工坊</span></a>
+      <a class="brand" href="/"><span class="brand-logo" aria-hidden="true"><b>图</b><i></i></span><span>插图工坊</span></a>
     </header>
     <a class="back-link floating-back-link" href="/">← 返回文章配图</a>
     <main class="character-main">
@@ -54,18 +57,26 @@
           <div class="character-spec" id="characterSpec">咩咩 · 极简线稿 · 高盘发 · 安静好奇</div>
           <div class="photo-upload" id="photoUpload" hidden>
             <label for="characterPhoto"><b>上传一张角色照片</b><small>支持 JPG、PNG、WEBP，建议正面清晰头像或半身照；推荐照片不低于 1024×1024 像素，最大 10MB</small></label>
-            <input id="characterPhoto" type="file" accept="image/png,image/jpeg,image/webp" />
-            <div class="photo-placeholder" id="photoPlaceholder" aria-hidden="true">
-              <span>＋</span>
-              <b>照片上传后会显示在这里</b>
-              <small>建议使用光线清楚、脸部完整的照片</small>
+            <div class="privacy-note">
+              <b>照片隐私提示</b>
+              <span>上传照片仅用于生成你的角色形象。请确认你拥有该照片的使用权，避免上传他人隐私照片。当前版本不会在页面公开展示你的原图。</span>
             </div>
-            <img id="photoPreview" alt="待生成角色照片预览" hidden />
+            <input id="characterPhoto" type="file" accept="image/png,image/jpeg,image/webp" />
+            <label class="photo-placeholder" id="photoPlaceholder" for="characterPhoto">
+              <span>＋</span>
+              <b>点击上传照片</b>
+              <small>照片上传后会显示在这里</small>
+            </label>
+            <label class="photo-preview-wrap" id="photoPreviewWrap" for="characterPhoto" hidden>
+              <img id="photoPreview" alt="待生成角色照片预览" />
+              <span>点击可重新上传</span>
+            </label>
+            <button class="clear-photo" id="clearPhoto" type="button" hidden>清空照片</button>
           </div>
-          <button class="generate-character" id="generateCharacter" type="button"><span>生成一张角色定妆图</span><small>会调用图像 API</small></button>
+          <button class="generate-character" id="generateCharacter" type="button"><span>确认生成角色定妆照</span></button>
           <p class="generation-status" id="generationStatus" aria-live="polite"></p>
           <div class="generated-character" id="generatedCharacter" hidden></div>
-          <button class="primary save-preview-character" id="saveCharacter" type="button" hidden><span>确认保存并用于插图</span><b>→</b></button>
+          <button class="primary save-preview-character" id="saveCharacter" type="button" hidden><span>保存到我的角色库</span><b>→</b></button>
         </aside>
       </div>
     </main>

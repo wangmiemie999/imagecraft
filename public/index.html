@@ -3,16 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="把中文文章变成咩咩极简手绘正文配图" />
-    <title>拾图工坊</title>
+    <meta name="description" content="输入中文文章，选择角色与张数，一键生成统一风格的文章配图" />
+    <title>插图工坊</title>
+    <script>
+      if (location.protocol === "file:") location.replace("http://127.0.0.1:4173/");
+    </script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="拾图工坊首页">
+      <a class="brand" href="/" aria-label="插图工坊首页">
         <span class="brand-logo" aria-hidden="true"><b>图</b><i></i></span>
-        <span>拾图工坊</span>
+        <span>插图工坊</span>
       </a>
       <div class="account-area" id="accountArea">
         <button class="account-entry" id="openAuth" type="button">登录 / 注册</button>
@@ -21,41 +24,65 @@
 
     <main>
       <section class="hero">
-        <p class="eyebrow">ARTICLE → STRANGE LITTLE PICTURES</p>
-        <h1>把文章里的关键判断，<br /><em>画成一件怪事。</em></h1>
-        <p class="intro">粘贴一篇中文文章。咩咩会先找出值得画的认知锚点，再把那些难以解释的东西变成清爽、灵动的手绘画面。</p>
+        <p class="eyebrow">ARTICLE → ILLUSTRATIONS</p>
+        <h1>输入一篇文章，<br /><em>生成一组配图。</em></h1>
+        <p class="intro">适合公众号、小红书、知识干货和课程内容。粘贴文章，选择角色和张数，插图工坊会先生成配图方案，再逐张输出统一风格的插图。</p>
         <div class="hero-doodle" aria-hidden="true">
           <svg viewBox="0 0 260 160">
             <path d="M20 88c29-26 51 26 78-2s58-28 78 0 40 13 66-7" />
             <path class="orange" d="M167 104c23 8 38 20 49 40m-2-13 2 13-13-4" />
           </svg>
           <div class="hero-character"><img src="/characters/meimei-avatar.png" alt="" /></div>
-          <small>正在认真处理抽象概念</small>
+          <small>正在整理文章配图方案</small>
+        </div>
+      </section>
+
+      <section class="example-showcase" aria-labelledby="exampleTitle">
+        <div class="example-copy">
+          <p class="eyebrow">EXAMPLE OUTPUT</p>
+          <h2 id="exampleTitle">先看一眼生成效果</h2>
+          <p>从一篇文章中提取配图方案，生成统一角色、统一风格的正文插图。适合放在文章段落之间，帮助读者更快理解重点。</p>
+          <div class="example-article">
+            <b>示例文章片段</b>
+            <span>“真正稳定的内容生产，不靠等待灵感，而靠把日常素材持续收集、筛选和重新组合。”</span>
+          </div>
+        </div>
+        <div class="example-cards">
+          <article>
+            <img src="/demo/xiaohei-demo.png" alt="文章配图示例" />
+            <b>文章概念配图</b>
+            <small>16:9 · 留白 · 手绘</small>
+          </article>
+          <article>
+            <img src="/characters/meimei.png" alt="咩咩角色示例" />
+            <b>统一角色形象</b>
+            <small>角色一致 · 可复用</small>
+          </article>
         </div>
       </section>
 
       <section class="workspace">
         <div class="steps" aria-label="操作步骤">
-          <button class="step active" data-step="1"><b>01</b><span>放入文章</span></button>
+          <button class="step active" data-step="1"><b>01</b><span>输入文章</span></button>
           <i></i>
-          <button class="step" data-step="2"><b>02</b><span>选择锚点</span></button>
+          <button class="step" data-step="2"><b>02</b><span>确认方案</span></button>
           <i></i>
           <button class="step" data-step="3"><b>03</b><span>生成配图</span></button>
         </div>
 
         <section class="panel active" id="step1">
           <div class="panel-head">
-            <div><span class="scribble">01</span><h2>把文章倒进来</h2></div>
-            <p>建议 300–3000 字，方法论、工作流和观点文章尤其合适。</p>
+            <div><span class="scribble">01</span><h2>输入你的文章</h2></div>
+            <p>建议 300–3000 字，适合观点文章、知识干货、课程讲义和工作流内容。</p>
           </div>
-          <textarea id="article" maxlength="12000" placeholder="在这里粘贴文章……"></textarea>
+          <textarea id="article" maxlength="12000" placeholder="在这里粘贴需要生成配图的文章……"></textarea>
           <div class="input-foot">
             <button class="text-button" id="sampleButton">放一篇示例</button>
             <span><b id="charCount">0</b> / 12,000 字</span>
           </div>
           <section class="style-lab" aria-labelledby="styleTitle">
             <div class="style-lab-head">
-              <div><span class="style-spark">✦</span><div><h3 id="styleTitle">选择咩咩画风</h3><p>角色保持一致，只改变线条质感和画面气质。</p></div></div>
+              <div><span class="style-spark">✦</span><div><h3 id="styleTitle">选择插图角色与风格</h3><p>先确定插图角色，再选择生成数量，生成出的图片会保持统一视觉。</p></div></div>
             </div>
             <div class="preset-grid two-styles" id="presetGrid">
               <button class="preset active" data-preset="xiaohei" type="button"><span class="preset-art meimei"><img src="/characters/meimei-avatar.png" alt="" /></span><b>咩咩极简线稿</b><small>细线 · 纯白 · 克制</small></button>
@@ -67,8 +94,8 @@
             </div>
             <section class="character-library" aria-labelledby="characterLibraryTitle">
               <div class="character-library-head">
-                <h4 id="characterLibraryTitle">选择插图角色</h4>
-                <small>生成文章配图时会使用选中的角色形象</small>
+                <h4 id="characterLibraryTitle">我的插图角色</h4>
+                <small>生成配图时会使用当前选中的角色形象</small>
               </div>
               <input class="character-search" id="characterSearch" type="search" placeholder="搜索角色名……" />
               <div class="selected-character-line" id="selectedCharacterLine">当前使用：咩咩</div>
@@ -81,43 +108,47 @@
               <button class="active" data-count="1">1</button><button data-count="2">2</button><button data-count="3">3</button><button data-count="4">4</button><button data-count="5">5</button><button data-count="6">6</button>
             </div>
           </div>
-          <button class="primary" id="planButton"><span>分析文章，寻找锚点</span><b>→</b></button>
+          <button class="primary" id="planButton"><span>生成配图方案</span><b>→</b></button>
         </section>
 
         <section class="panel" id="step2">
           <div class="panel-head">
-            <div><span class="scribble">02</span><h2>这些地方值得画</h2></div>
-            <p>可以编辑主题、核心意思和角色动作，再选择要生成的图片。</p>
+            <div><span class="scribble">02</span><h2>确认配图方案</h2></div>
+            <p>你可以修改每张图的主题、表达重点和角色动作，再选择需要生成的图片。</p>
           </div>
           <div id="shotList" class="shot-list"></div>
           <div class="panel-actions">
-            <button class="secondary back" data-target="1">← 返回文章</button>
-            <button class="primary" id="generateButton"><span>让咩咩开工</span><b>→</b></button>
+            <button class="secondary back" data-target="1">← 返回修改文章</button>
+            <button class="primary" id="generateButton"><span>开始生成配图</span><b>→</b></button>
           </div>
         </section>
 
         <section class="panel" id="step3">
           <div class="panel-head">
-            <div><span class="scribble">03</span><h2>咩咩交作业了</h2></div>
+            <div><span class="scribble">03</span><h2>配图生成完成</h2></div>
             <p id="resultSummary">每张图单独生成，完成后可下载 PNG。</p>
+          </div>
+          <div class="result-toolbar">
+            <button class="secondary" id="downloadAllButton" type="button" disabled>全部下载</button>
+            <span id="downloadHint">生成完成后可批量下载已成功的图片。</span>
           </div>
           <div id="gallery" class="gallery"></div>
           <div class="panel-actions">
-            <button class="secondary back" data-target="2">← 调整方案</button>
+            <button class="secondary back" data-target="2">← 调整配图方案</button>
             <button class="primary" id="restartButton"><span>再做一篇</span><b>↻</b></button>
           </div>
         </section>
       </section>
     </main>
 
-    <footer><span>咩咩负责把难懂的东西画得清楚又好看。</span><span>16:9 · 纯白手绘 · 极简而灵动</span></footer>
+    <footer><span>为文章、笔记和课程内容快速生成统一风格配图。</span><span>16:9 · 角色一致 · 可下载 PNG</span></footer>
     <div class="auth-modal" id="authModal" hidden>
       <div class="auth-backdrop" data-auth-close></div>
       <section class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
         <button class="auth-close" data-auth-close type="button" aria-label="关闭">×</button>
         <div class="auth-head">
           <p class="eyebrow">LOCAL ACCOUNT MVP</p>
-          <h2 id="authTitle">拾图工坊账户</h2>
+          <h2 id="authTitle">插图工坊账户</h2>
           <p>用于演示手机号注册登录流程，当前版本仅保存在本地浏览器，验证码为本地演示验证码。</p>
         </div>
         <div class="auth-tabs" role="tablist">

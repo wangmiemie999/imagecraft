@@ -27,7 +27,7 @@ function readCharacterLibrary() {
 let characterLibrary = readCharacterLibrary();
 const selectedCharacterId = localStorage.getItem(SELECTED_CHARACTER_KEY);
 const savedCharacter = characterLibrary.find((item) => item.id === selectedCharacterId) || characterLibrary[0] || defaultCharacter;
-const state = { step: 1, count: 1, shots: [], results: [], style: { ...defaultStyle, character: savedCharacter }, character: savedCharacter };
+const state = { step: 1, count: 1, shots: [], activeShots: [], results: [], style: { ...defaultStyle, character: savedCharacter }, character: savedCharacter };
 let characterSearchTerm = "";
 let demoSmsCode = "";
 let demoSmsPhone = "";
@@ -232,12 +232,12 @@ function renderCharacterLibrary() {
     <a class="character-empty-state add" href="/character.html">
       <i>＋</i>
       <b>待加入角色</b>
-      <small>去角色工作室创建你的专属角色</small>
+      <small>创建一个专属插图角色</small>
     </a>`;
   grid.innerHTML = rows || empty;
   $("#characterStatus").textContent = "从照片生成你的专属插图角色";
   $("#selectedCharacterLine").textContent = `当前使用：${state.character.name || "专属角色"}`;
-  $("#generateButton span").textContent = `让${state.character.name || "角色"}开工`;
+  $("#generateButton span").textContent = `用${state.character.name || "角色"}生成配图`;
 }
 
 function resultCard(shot, index) {
@@ -247,27 +247,68 @@ function resultCard(shot, index) {
   </article>`;
 }
 
+function updateDownloadAllState() {
+  const button = $("#downloadAllButton");
+  if (!button) return;
+  const successCount = state.results.filter((item) => item?.url).length;
+  button.disabled = successCount === 0;
+  $("#downloadHint").textContent = successCount ? `已有 ${successCount} 张可下载。浏览器可能会询问是否允许多个文件下载。` : "生成完成后可批量下载已成功的图片。";
+}
+
+function renderResultSuccess(card, shot, result, index) {
+  card.querySelector(".art-frame").innerHTML = `<img src="${result.url}" alt="${escapeHtml(shot.title)}" />`;
+  card.querySelector(".art-info").innerHTML = `
+    <h3>${escapeHtml(shot.title)}</h3>
+    <span class="art-actions">
+      <a class="download" href="${result.url}" download="shitu-${index + 1}.png">下载 PNG ↓</a>
+      <button class="retry-image" data-index="${index}" type="button">重新生成</button>
+    </span>`;
+}
+
+function renderResultError(card, shot, error, index) {
+  card.querySelector(".art-frame").innerHTML = `<div class="error-card">生成失败<br />${escapeHtml(error.message)}</div>`;
+  card.querySelector(".art-info").innerHTML = `
+    <h3>${escapeHtml(shot.title)}</h3>
+    <span class="art-actions">
+      <button class="retry-image" data-index="${index}" type="button">重试这一张</button>
+    </span>`;
+}
+
+async function generateOne(index) {
+  const shot = state.activeShots[index];
+  const card = $(`#result-${index}`);
+  if (!shot || !card) return;
+  state.results[index] = null;
+  updateDownloadAllState();
+  card.querySelector(".art-frame").innerHTML = `<div class="loader"></div>`;
+  card.querySelector(".art-info").innerHTML = `<h3>${escapeHtml(shot.title)}</h3><span>第 ${index + 1} 张生成中</span>`;
+  try {
+    const result = await request("/api/generate", { method: "POST", body: JSON.stringify({ shot, style: state.style }) });
+    state.results[index] = result;
+    renderResultSuccess(card, shot, result, index);
+  } catch (error) {
+    state.results[index] = { error: error.message };
+    renderResultError(card, shot, error, index);
+  }
+  updateDownloadAllState();
+}
+
 async function generateAll() {
   pullShots();
   const chosen = state.shots.filter((shot) => shot.selected);
-  if (!chosen.length) return toast("至少勾选一个配图锚点");
+  if (!chosen.length) return toast("至少选择一张配图方案");
   go(3);
-  state.results = [];
+  state.activeShots = chosen;
+  state.results = Array(chosen.length).fill(null);
   $("#gallery").innerHTML = chosen.map(resultCard).join("");
-  $("#resultSummary").textContent = `咩咩正在处理 ${chosen.length} 个认知锚点，请稍等。`;
+  $("#resultSummary").textContent = `正在生成 ${chosen.length} 张配图，请稍等。`;
+  updateDownloadAllState();
 
   for (let index = 0; index < chosen.length; index += 1) {
-    const card = $(`#result-${index}`);
-    try {
-      const result = await request("/api/generate", { method: "POST", body: JSON.stringify({ shot: chosen[index], style: state.style }) });
-      state.results.push(result);
-      card.querySelector(".art-frame").innerHTML = `<img src="${result.url}" alt="${escapeHtml(chosen[index].title)}" />`;
-      card.querySelector(".art-info").innerHTML = `<h3>${escapeHtml(chosen[index].title)}</h3><a class="download" href="${result.url}" download="meimei-${index + 1}.png">下载 PNG ↓</a>`;
-    } catch (error) {
-      card.querySelector(".art-frame").innerHTML = `<div class="error-card">生成失败<br />${escapeHtml(error.message)}</div>`;
-    }
+    await generateOne(index);
   }
-  $("#resultSummary").textContent = `完成 ${state.results.length} 张。${state.results.some((item) => item.demo) ? "当前为演示模式，配置 API Key 后将逐张生成不同图片。" : "图片已保存到服务端 outputs 目录。"}`;
+  const successCount = state.results.filter((item) => item?.url).length;
+  $("#resultSummary").textContent = `完成 ${successCount} 张。${state.results.some((item) => item?.demo) ? "当前为演示模式，配置 API Key 后将逐张生成不同图片。" : "图片已保存到服务端 outputs 目录。"}`;
 }
 
 $("#article").addEventListener("input", syncArticle);
@@ -336,17 +377,39 @@ $("#planButton").addEventListener("click", async () => {
   const article = $("#article").value.trim();
   const button = $("#planButton");
   button.disabled = true;
-  button.querySelector("span").textContent = "正在拆解文章…";
+  button.querySelector("span").textContent = "正在生成配图方案…";
   try {
     const result = await request("/api/plan", { method: "POST", body: JSON.stringify({ article, count: state.count }) });
     state.shots = result.shots;
     renderShots();
     go(2);
   } catch (error) { toast(error.message); }
-  finally { button.disabled = false; button.querySelector("span").textContent = "分析文章，寻找锚点"; }
+  finally { button.disabled = false; button.querySelector("span").textContent = "生成配图方案"; }
 });
 $("#generateButton").addEventListener("click", generateAll);
-$("#restartButton").addEventListener("click", () => { state.shots = []; state.results = []; $("#gallery").innerHTML = ""; go(1); });
+$("#gallery").addEventListener("click", async (event) => {
+  const button = event.target.closest(".retry-image");
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = "重试中…";
+  await generateOne(Number(button.dataset.index));
+});
+$("#downloadAllButton").addEventListener("click", () => {
+  const urls = state.results.map((item, index) => item?.url ? { url: item.url, index } : null).filter(Boolean);
+  if (!urls.length) return toast("还没有可下载的图片");
+  urls.forEach((item, order) => {
+    setTimeout(() => {
+      const link = document.createElement("a");
+      link.href = item.url;
+      link.download = `shitu-${item.index + 1}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }, order * 180);
+  });
+  toast(`开始下载 ${urls.length} 张图片`);
+});
+$("#restartButton").addEventListener("click", () => { state.shots = []; state.activeShots = []; state.results = []; $("#gallery").innerHTML = ""; updateDownloadAllState(); go(1); });
 $$('.back').forEach((button) => button.addEventListener("click", () => go(Number(button.dataset.target))));
 $$('.step').forEach((button) => button.addEventListener("click", () => {
   const target = Number(button.dataset.step);
