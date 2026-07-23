@@ -2,8 +2,8 @@ import http from "node:http";
 import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildImagePrompt, makeLocalPlan } from "./lib/plan.js";
-import { loadStore, saveStore, registerUser, loginUser, createSession, getSessionUser, destroySession, publicUser } from "./lib/store.js";
+import { buildImagePrompt, buildSmartPlanPrompt, makeLocalPlan, parseSmartShots } from "./lib/plan.js";
+import { loadStore, saveStore, registerUser, loginUser, createSession, getSessionUser, destroySession, publicUser, createSmsCode, verifySmsCode, resetPassword, deleteUser } from "./lib/store.js";
 import { stampAiLabel } from "./lib/watermark.js";
 import { checkText, REJECT_MESSAGE } from "./lib/moderation.js";
 
@@ -19,6 +19,94 @@ const IMAGE_MODEL = process.env.OPENROUTER_IMAGE_MODEL || "bytedance-seed/seedre
 const IMAGE_API_URL = process.env.OPENROUTER_IMAGE_URL || "https://openrouter.ai/api/v1/images";
 const IMAGE_TIMEOUT_MS = Number(process.env.IMAGE_TIMEOUT_MS || 120000);
 const RELAY_TOKEN = process.env.RELAY_TOKEN || "";
+const PLAN_MODEL = process.env.PLAN_MODEL || "openai/gpt-4o-mini";
+const CHAT_API_URL = process.env.OPENROUTER_CHAT_URL || "https://openrouter.ai/api/v1/chat/completions";
+
+// 智能配图方案:调用轻量文本模型提炼内容相关的镜头,失败返回 null 由调用方降级
+async function smartPlan(article, count) {
+  if (!API_KEY) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(CHAT_API_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${API_KEY}`,
+        "content-type": "application/json",
+        "HTTP-Referer": `http://127.0.0.1:${PORT}`,
+        "X-Title": "ImageCraft",
+        ...(RELAY_TOKEN ? { "x-relay-token": RELAY_TOKEN } : {})
+      },
+      body: JSON.stringify({
+        model: PLAN_MODEL,
+        max_tokens: 900,
+        messages: [{ role: "user", content: buildSmartPlanPrompt(article, count) }]
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.warn(`[智能方案] 接口返回 ${response.status}:`, JSON.stringify(payload?.error || payload).slice(0, 200), "→ 降级本地算法");
+      return null;
+    }
+    const text = payload?.choices?.[0]?.message?.content || "";
+    const shots = parseSmartShots(text, count);
+    if (!shots) {
+      console.warn("[智能方案] 模型返回无法解析,原文前200字:", String(text).slice(0, 200), "→ 降级本地算法");
+      return null;
+    }
+    console.log(`[智能方案] 成功,模型 ${PLAN_MODEL} 产出 ${shots.length} 个镜头`);
+    return shots;
+  } catch (error) {
+    console.warn("[智能方案] 调用异常:", error.message, "→ 降级本地算法");
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+const SMS = {
+  keyId: process.env.SMS_ACCESS_KEY_ID || "",
+  keySecret: process.env.SMS_ACCESS_KEY_SECRET || "",
+  signName: process.env.SMS_SIGN_NAME || "",
+  templateCode: process.env.SMS_TEMPLATE_CODE || ""
+};
+const SMS_ENABLED = Boolean(SMS.keyId && SMS.keySecret && SMS.signName && SMS.templateCode);
+
+function percentEncode(value) {
+  return encodeURIComponent(value).replace(/\+/g, "%20").replace(/\*/g, "%2A").replace(/%7E/g, "~");
+}
+
+// 阿里云短信发送(RPC 签名,无第三方依赖)
+async function sendSms(phone, code) {
+  const { createHmac } = await import("node:crypto");
+  const params = {
+    AccessKeyId: SMS.keyId,
+    Action: "SendSms",
+    Format: "JSON",
+    PhoneNumbers: phone,
+    RegionId: "cn-hangzhou",
+    SignName: SMS.signName,
+    SignatureMethod: "HMAC-SHA1",
+    SignatureNonce: randomUUID(),
+    SignatureVersion: "1.0",
+    TemplateCode: SMS.templateCode,
+    TemplateParam: JSON.stringify({ code }),
+    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    Version: "2017-05-25"
+  };
+  const canonical = Object.keys(params).sort().map((key) => `${percentEncode(key)}=${percentEncode(params[key])}`).join("&");
+  const stringToSign = `POST&${percentEncode("/")}&${percentEncode(canonical)}`;
+  const signature = createHmac("sha1", SMS.keySecret + "&").update(stringToSign).digest("base64");
+  const body = `Signature=${percentEncode(signature)}&${canonical}`;
+  const response = await fetch("https://dysmsapi.aliyuncs.com/", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (payload.Code !== "OK") throw new Error(payload.Message || "短信发送失败");
+  return true;
+}
 
 async function fetchWithRetry(url, options, retries = 1) {
   for (let attempt = 0; ; attempt += 1) {
@@ -46,7 +134,12 @@ const RATE_LIMITS = {
   "/api/plan": { limit: 20, windowMs: 60_000, label: "文章分析" },
   "/api/generate": { limit: 8, windowMs: 60_000, label: "图片生成" },
   "/api/character/simple": { limit: 3, windowMs: 60_000, label: "角色生成" },
-  "/api/character/runninghub": { limit: 3, windowMs: 60_000, label: "角色生成" }
+  "/api/character/runninghub": { limit: 3, windowMs: 60_000, label: "角色生成" },
+  "/api/auth/send-code": { limit: 3, windowMs: 60_000, label: "验证码发送" },
+  "/api/auth/register": { limit: 10, windowMs: 60_000, label: "注册" },
+  "/api/auth/login": { limit: 10, windowMs: 60_000, label: "登录" },
+  "/api/auth/reset-password": { limit: 5, windowMs: 60_000, label: "密码重置" },
+  "/api/auth/delete-account": { limit: 5, windowMs: 60_000, label: "账号注销" }
 };
 const RUNNINGHUB_VIEW_PROMPTS = {
   "214": "白色背景。生成角色上半身正视图，姿势参考图二。",
@@ -77,6 +170,16 @@ function logUsage(event, extra = {}) {
     mkdirSync(join(ROOT, "data"), { recursive: true });
     appendFileSync(join(ROOT, "data", "usage.log"), JSON.stringify({ ts: new Date().toISOString(), event, ...extra }) + "\n");
   } catch {}
+}
+
+// 原子扣额:生成完成后重读最新存储再扣,避免并发请求用旧快照互相覆盖导致少扣
+function debitQuota(phone) {
+  const store = loadStore();
+  const user = store.users.find((u) => u.phone === phone);
+  if (!user) return null;
+  user.used += 1;
+  saveStore(store);
+  return { used: user.used, total: user.quota, remaining: Math.max(0, user.quota - user.used) };
 }
 
 function authToken(req) {
@@ -380,11 +483,59 @@ async function createSimpleCharacter(imageData, settings = {}) {
 async function api(req, res, pathname) {
   if (req.method !== "GET" && applyRateLimit(req, res, pathname)) return;
   if (req.method === "GET" && pathname === "/api/status") {
-    return json(res, 200, { mode: API_KEY ? "live" : "demo", provider: "openrouter", model: IMAGE_MODEL, runninghub: Boolean(RUNNINGHUB_API_KEY && RUNNINGHUB_WORKFLOW_ID) });
+    return json(res, 200, { mode: API_KEY ? "live" : "demo", provider: "openrouter", model: IMAGE_MODEL, sms: SMS_ENABLED, runninghub: Boolean(RUNNINGHUB_API_KEY && RUNNINGHUB_WORKFLOW_ID) });
+  }
+  if (req.method === "POST" && pathname === "/api/auth/send-code") {
+    if (!SMS_ENABLED) return json(res, 400, { error: "短信服务尚未开通" });
+    const data = await body(req);
+    const purpose = ["register", "reset", "delete"].includes(data.purpose) ? data.purpose : "register";
+    const store = loadStore();
+    const made = createSmsCode(store, data.phone, purpose);
+    if (made.error) return json(res, 400, { error: made.error });
+    try {
+      await sendSms(String(data.phone).trim(), made.code);
+    } catch (error) {
+      console.warn("[短信] 发送失败:", error.message);
+      return json(res, 502, { error: "短信发送失败，请稍后重试" });
+    }
+    saveStore(store);
+    return json(res, 200, { ok: true });
+  }
+  if (req.method === "POST" && pathname === "/api/auth/reset-password") {
+    if (!SMS_ENABLED) return json(res, 400, { error: "短信服务尚未开通，请联系管理员重置密码" });
+    const data = await body(req);
+    const store = loadStore();
+    const verified = verifySmsCode(store, data.phone, "reset", data.code);
+    if (verified.error) { saveStore(store); return json(res, 400, { error: verified.error }); }
+    const result = resetPassword(store, data.phone, data.password);
+    if (result.error) { saveStore(store); return json(res, 400, { error: result.error }); }
+    saveStore(store);
+    logUsage("reset-password", { phone: String(data.phone).trim() });
+    return json(res, 200, { ok: true });
+  }
+  if (req.method === "POST" && pathname === "/api/auth/delete-account") {
+    const data = await body(req);
+    const store = loadStore();
+    const user = getSessionUser(store, authToken(req));
+    if (!user) return json(res, 401, { error: "未登录" });
+    const check = loginUser(store, { phone: user.phone, password: data.password });
+    if (check.error) return json(res, 400, { error: "密码不正确，无法注销" });
+    if (SMS_ENABLED) {
+      const verified = verifySmsCode(store, user.phone, "delete", data.code);
+      if (verified.error) { saveStore(store); return json(res, 400, { error: verified.error }); }
+    }
+    deleteUser(store, user.phone);
+    saveStore(store);
+    logUsage("delete-account", { phone: user.phone });
+    return json(res, 200, { ok: true });
   }
   if (req.method === "POST" && pathname === "/api/auth/register") {
     const data = await body(req);
     const store = loadStore();
+    if (SMS_ENABLED) {
+      const verified = verifySmsCode(store, data.phone, "register", data.code);
+      if (verified.error) { saveStore(store); return json(res, 400, { error: verified.error }); }
+    }
     const result = registerUser(store, data);
     if (result.error) return json(res, 400, { error: result.error });
     const token = createSession(store, result.user.phone);
@@ -422,7 +573,10 @@ async function api(req, res, pathname) {
       console.warn(`[内容过滤] /api/plan 命中违禁词`);
       return json(res, 400, { error: REJECT_MESSAGE });
     }
-    return json(res, 200, { shots: makeLocalPlan(article, data.count), mode: API_KEY ? "live" : "demo" });
+    const smart = await smartPlan(article, data.count);
+    logUsage("plan", { mode: smart ? "smart" : "local" });
+    const shots = smart || makeLocalPlan(article, data.count);
+    return json(res, 200, { shots, mode: API_KEY ? "live" : "demo", planner: smart ? "smart" : "local" });
   }
   if (req.method === "POST" && pathname === "/api/generate") {
     const data = await body(req);
@@ -437,25 +591,36 @@ async function api(req, res, pathname) {
       return json(res, 400, { error: REJECT_MESSAGE });
     }
     const result = await generateImage(data.shot, data.style);
-    if (!result.demo) {
-      user.used += 1;
-      saveStore(store);
-    }
+    let quota = { used: user.used, total: user.quota, remaining: Math.max(0, user.quota - user.used) };
+    if (!result.demo) quota = debitQuota(user.phone) || quota;
     logUsage("generate", { phone: user.phone, demo: Boolean(result.demo) });
-    return json(res, 200, { ...result, quota: { used: user.used, total: user.quota, remaining: Math.max(0, user.quota - user.used) } });
+    return json(res, 200, { ...result, quota });
   }
   if (req.method === "POST" && pathname === "/api/character/simple") {
     const data = await body(req);
     if (!data.image) return json(res, 400, { error: "请先上传一张角色照片" });
+    const store = loadStore();
+    const user = getSessionUser(store, authToken(req));
+    if (!user) return json(res, 401, { error: "请先登录后再生成角色" });
+    if (user.used >= user.quota) return json(res, 403, { error: `你的免费生成额度（${user.quota} 张）已用完` });
     const charHit = checkText(data.settings?.name, data.settings?.custom);
     if (charHit) {
       console.warn(`[内容过滤] /api/character/simple 命中违禁词`);
       return json(res, 400, { error: REJECT_MESSAGE });
     }
-    return json(res, 200, await createSimpleCharacter(data.image, data.settings));
+    const result = await createSimpleCharacter(data.image, data.settings);
+    let quota = { used: user.used, total: user.quota, remaining: Math.max(0, user.quota - user.used) };
+    if (!result.demo) {
+      quota = debitQuota(user.phone) || quota;
+      logUsage("generate-character", { phone: user.phone });
+    }
+    return json(res, 200, { ...result, quota });
   }
   if (req.method === "POST" && pathname === "/api/character/runninghub") {
     const data = await body(req);
+    const rhStore = loadStore();
+    const rhUser = getSessionUser(rhStore, authToken(req));
+    if (!rhUser) return json(res, 401, { error: "请先登录后再生成角色" });
     return json(res, 200, await createRunningHubCharacter(data.image, data.fileName, data.settings));
   }
   if (req.method === "GET" && pathname === "/api/character/runninghub") {

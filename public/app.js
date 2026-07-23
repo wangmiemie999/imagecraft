@@ -34,8 +34,44 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const sample = `我们常常以为，灵感是一种偶然到访的东西。于是打开空白文档，等一个好念头从天花板上掉下来。\n\n但真正稳定的内容生产，不靠等待，而靠打捞。日常对话、项目复盘、读书笔记和失败记录，都是漂在水面下的素材。问题不是没有灵感，而是没有把它们捞起来的动作。\n\n先记录，再判断。记录时不要急着证明价值；判断时只问一件事：这条信息能不能帮助某个具体的人看清一个问题？\n\n当素材被持续收集、筛选和重新组合，灵感就不再是一场天气，而变成一套可以重复启动的小机器。`;
 
-const articleDraft = sessionStorage.getItem("xiaohei-article-draft");
-if (articleDraft) $("#article").value = articleDraft;
+// 一次性草稿:仅用于"去角色工作室"往返时保留文章,恢复后立即销毁,普通刷新不残留
+const articleDraft = sessionStorage.getItem("imagecraft-article-draft");
+if (articleDraft) {
+  $("#article").value = articleDraft;
+  sessionStorage.removeItem("imagecraft-article-draft");
+}
+
+function setFieldError(inputId, message) {
+  const input = $("#" + inputId);
+  if (!input) return;
+  input.classList.add("input-invalid");
+  let tip = input.parentElement.querySelector(".field-error");
+  if (!tip) {
+    tip = document.createElement("span");
+    tip.className = "field-error";
+    input.parentElement.appendChild(tip);
+  }
+  tip.textContent = message;
+  input.focus();
+}
+
+function clearFieldErrors(formId) {
+  const form = $("#" + formId);
+  if (!form) return;
+  form.querySelectorAll(".input-invalid").forEach((el) => el.classList.remove("input-invalid"));
+  form.querySelectorAll(".field-error").forEach((el) => el.remove());
+}
+
+function authNotice(formId, type, message) {
+  const form = $("#" + formId);
+  if (!form) return;
+  form.querySelector(".auth-notice")?.remove();
+  if (!message) return;
+  const box = document.createElement("p");
+  box.className = "auth-notice " + type;
+  box.textContent = message;
+  form.prepend(box);
+}
 
 function toast(message) {
   const el = $("#toast");
@@ -125,6 +161,10 @@ function closeAuth() {
 function setAuthTab(tab) {
   $$(".auth-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.authTab === tab));
   $$(".auth-form").forEach((panel) => panel.classList.toggle("active", panel.dataset.authPanel === tab));
+  const resetForm = $("#resetForm");
+  if (resetForm) { resetForm.hidden = true; resetForm.classList.remove("active"); }
+  const loginForm = $("#loginForm");
+  if (loginForm) loginForm.hidden = false;
   if (tab === "profile") renderProfileForm();
 }
 
@@ -161,44 +201,56 @@ function renderProfileForm() {
 
 async function registerUser(event) {
   event.preventDefault();
+  clearFieldErrors("registerForm");
+  authNotice("registerForm", "err", "");
   const phone = $("#registerPhone").value.trim();
   const invite = $("#registerInvite").value.trim();
   const password = $("#registerPassword").value;
   const confirmPassword = $("#registerPasswordConfirm").value;
-  if (!/^1\d{10}$/.test(phone)) return toast("请输入 11 位手机号");
-  if (!invite) return toast("请输入邀请码");
-  if (password.length < 6) return toast("密码至少 6 位");
-  if (password !== confirmPassword) return toast("两次密码不一致");
-  if (!$("#registerAgreement").checked) return toast("请先同意用户协议和隐私政策");
+  if (!/^1\d{10}$/.test(phone)) return setFieldError("registerPhone", "请输入 11 位手机号");
+  if (!invite) return setFieldError("registerInvite", "请输入邀请码");
+  if (password.length < 6) return setFieldError("registerPassword", "密码至少 6 位");
+  if (password !== confirmPassword) return setFieldError("registerPasswordConfirm", "两次输入的密码不一致");
+  if (!$("#registerAgreement").checked) return authNotice("registerForm", "err", "请先勾选同意用户协议和隐私政策");
   try {
-    const data = await request("/api/auth/register", { method: "POST", body: JSON.stringify({ phone, password, invite }) });
-    localStorage.setItem(TOKEN_KEY, data.token);
-    authState.user = data.user;
+    const smsCode = smsEnabled ? $("#registerCode").value.trim() : undefined;
+    if (smsEnabled && !smsCode) return setFieldError("registerCode", "请输入短信验证码");
+    const data = await request("/api/auth/register", { method: "POST", body: JSON.stringify({ phone, password, invite, code: smsCode }) });
+    const quota = data.user.quota;
     $("#registerForm").reset();
-    renderAccount();
-    setAuthTab("profile");
-    renderProfileForm();
-    toast(`注册成功！你有 ${data.user.quota} 张免费生成额度`);
+    setAuthTab("login");
+    $("#loginName").value = phone;
+    authNotice("loginForm", "ok", `注册成功！你有 ${quota} 张免费生成额度，请输入密码登录`);
+    $("#loginPassword")?.focus();
+    toast("注册成功，请登录");
   } catch (error) {
-    toast(error.message);
+    const message = error.message || "注册失败，请重试";
+    if (message.includes("手机号")) setFieldError("registerPhone", message);
+    else if (message.includes("邀请码")) setFieldError("registerInvite", message);
+    else if (message.includes("密码")) setFieldError("registerPassword", message);
+    else authNotice("registerForm", "err", message);
   }
 }
 
 async function loginUser(event) {
   event.preventDefault();
+  clearFieldErrors("loginForm");
   const phone = $("#loginName").value.trim();
   const password = $("#loginPassword").value;
+  if (!/^1\d{10}$/.test(phone)) return setFieldError("loginName", "请输入 11 位手机号");
+  if (!password) return setFieldError("loginPassword", "请输入密码");
   try {
     const data = await request("/api/auth/login", { method: "POST", body: JSON.stringify({ phone, password }) });
     localStorage.setItem(TOKEN_KEY, data.token);
     authState.user = data.user;
     $("#loginForm").reset();
+    authNotice("loginForm", "ok", "");
     renderAccount();
     setAuthTab("profile");
     renderProfileForm();
     toast(`欢迎回来，${data.user.phone}`);
   } catch (error) {
-    toast(error.message);
+    authNotice("loginForm", "err", error.message || "登录失败，请重试");
   }
 }
 
@@ -275,17 +327,55 @@ function renderResultError(card, shot, error, index) {
     </span>`;
 }
 
+function startProgress(frame, stageEl) {
+  // 模拟进度:3秒内到30%,之后渐进逼近93%,出图时外部调用finish()跳到100%
+  const startAt = Date.now();
+  frame.innerHTML = `<div class="gen-progress"><span class="pct">0%</span><span class="bar"><i></i></span><span class="stage">正在连接生图模型…</span></div>`;
+  const pctEl = frame.querySelector(".pct");
+  const barEl = frame.querySelector(".bar i");
+  const stgEl = frame.querySelector(".stage");
+  const stages = [
+    [0, "正在连接生图模型…"],
+    [10, "模型正在理解画面结构…"],
+    [35, "正在绘制线稿…"],
+    [65, "正在细化角色与标注…"],
+    [85, "即将完成,正在传输图片…"]
+  ];
+  const timer = setInterval(() => {
+    const seconds = (Date.now() - startAt) / 1000;
+    let pct;
+    if (seconds <= 3) pct = seconds / 3 * 30;
+    else pct = 30 + 63 * (1 - Math.exp(-(seconds - 3) / 18));
+    pct = Math.min(93, pct);
+    pctEl.textContent = `${Math.floor(pct)}%`;
+    barEl.style.width = `${pct}%`;
+    const stage = stages.filter(([at]) => pct >= at).pop();
+    stgEl.textContent = `${stage[1]} · 已用 ${Math.floor(seconds)} 秒`;
+  }, 250);
+  return {
+    finish() {
+      clearInterval(timer);
+      pctEl.textContent = "100%";
+      barEl.style.width = "100%";
+      stgEl.textContent = "完成";
+    },
+    stop() { clearInterval(timer); }
+  };
+}
+
 async function generateOne(index) {
   const shot = state.activeShots[index];
   const card = $(`#result-${index}`);
   if (!shot || !card) return;
   state.results[index] = null;
   updateDownloadAllState();
-  card.querySelector(".art-frame").innerHTML = `<div class="loader"></div>`;
+  const progress = startProgress(card.querySelector(".art-frame"));
   card.querySelector(".art-info").innerHTML = `<h3>${escapeHtml(shot.title)}</h3><span>第 ${index + 1} 张生成中</span>`;
   try {
     const result = await request("/api/generate", { method: "POST", body: JSON.stringify({ shot, style: state.style }) });
     state.results[index] = result;
+    progress.finish();
+    await new Promise((resolve) => setTimeout(resolve, 350));
     renderResultSuccess(card, shot, result, index);
     if (result.quota && authState.user) {
       authState.user.used = result.quota.used;
@@ -293,6 +383,7 @@ async function generateOne(index) {
       renderAccount();
     }
   } catch (error) {
+    progress.stop();
     state.results[index] = { error: error.message };
     renderResultError(card, shot, error, index);
     if (error.status === 401) { toast("请先登录再生成插图"); openAuth("login"); }
@@ -312,9 +403,23 @@ async function generateAll() {
   $("#resultSummary").textContent = `正在生成 ${chosen.length} 张配图，请稍等。`;
   updateDownloadAllState();
 
-  for (let index = 0; index < chosen.length; index += 1) {
-    await generateOne(index);
-  }
+  const CONCURRENCY = 3;
+  let cursor = 0;
+  const updateBatchProgress = () => {
+    const done = state.results.filter((item) => item && (item.url || item.error)).length;
+    $("#resultSummary").textContent = `生成中… 已完成 ${done} / ${chosen.length} 张`;
+  };
+  updateBatchProgress();
+  const originalGenerate = generateOne;
+  const trackedWorker = async () => {
+    while (cursor < chosen.length) {
+      const index = cursor;
+      cursor += 1;
+      await originalGenerate(index);
+      updateBatchProgress();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chosen.length) }, trackedWorker));
   const successCount = state.results.filter((item) => item?.url).length;
   $("#resultSummary").textContent = `完成 ${successCount} 张。${state.results.some((item) => item?.demo) ? "当前为演示模式，配置 API Key 后将逐张生成不同图片。" : "图片已保存到服务端 outputs 目录。"}`;
 }
@@ -360,7 +465,7 @@ $("#characterSearch").addEventListener("input", (event) => {
   characterSearchTerm = event.target.value;
   renderCharacterLibrary();
 });
-$(".character-jump").addEventListener("click", () => sessionStorage.setItem("xiaohei-article-draft", $("#article").value));
+$(".character-jump").addEventListener("click", () => sessionStorage.setItem("imagecraft-article-draft", $("#article").value));
 $("#sampleButton").addEventListener("click", () => { $("#article").value = sample; syncArticle(); toast("示例文章已放入"); });
 $("#accountArea")?.addEventListener("click", (event) => {
   if (event.target.closest("#openAuth")) openAuth(currentUser() ? "profile" : "login");
@@ -423,7 +528,106 @@ $$('.step').forEach((button) => button.addEventListener("click", () => {
   if (target === 1 || (target === 2 && state.shots.length) || (target === 3 && state.results.length)) go(target);
 }));
 
+let smsEnabled = false;
+function applySmsVisibility() {
+  document.querySelectorAll(".sms-only").forEach((el) => { el.hidden = !smsEnabled; });
+}
+
+function bindSendCode(buttonId, phoneInputId, purpose) {
+  const button = $(buttonId);
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const phone = $(phoneInputId).value.trim();
+    if (!/^1\d{10}$/.test(phone)) return toast("请先输入 11 位手机号");
+    button.disabled = true;
+    try {
+      await request("/api/auth/send-code", { method: "POST", body: JSON.stringify({ phone, purpose }) });
+      toast("验证码已发送，请查收短信");
+      let left = 60;
+      const original = button.textContent;
+      button.textContent = `${left}秒后重发`;
+      const timer = setInterval(() => {
+        left -= 1;
+        if (left <= 0) { clearInterval(timer); button.disabled = false; button.textContent = original; }
+        else button.textContent = `${left}秒后重发`;
+      }, 1000);
+    } catch (error) {
+      button.disabled = false;
+      toast(error.message);
+    }
+  });
+}
+bindSendCode("#registerSendCode", "#registerPhone", "register");
+bindSendCode("#resetSendCode", "#resetPhone", "reset");
+
+$("#forgotLink")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  if (!smsEnabled) return authNotice("loginForm", "err", "短信服务尚未开通，请联系管理员重置密码");
+  $("#loginForm").classList.remove("active");
+  $("#loginForm").hidden = true;
+  $("#resetForm").hidden = false;
+  $("#resetForm").classList.add("active");
+});
+$("#backToLogin")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  $("#resetForm").classList.remove("active");
+  $("#resetForm").hidden = true;
+  $("#loginForm").hidden = false;
+  $("#loginForm").classList.add("active");
+});
+$("#resetForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearFieldErrors("resetForm");
+  const phone = $("#resetPhone").value.trim();
+  const code = $("#resetCode").value.trim();
+  const password = $("#resetPassword").value;
+  const confirm = $("#resetPasswordConfirm").value;
+  if (!/^1\d{10}$/.test(phone)) return setFieldError("resetPhone", "请输入 11 位手机号");
+  if (!code) return setFieldError("resetCode", "请输入短信验证码");
+  if (password.length < 6) return setFieldError("resetPassword", "密码至少 6 位");
+  if (password !== confirm) return setFieldError("resetPasswordConfirm", "两次输入的密码不一致");
+  try {
+    await request("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ phone, code, password }) });
+    $("#resetForm").reset();
+    $("#backToLogin").click();
+    $("#loginName").value = phone;
+    authNotice("loginForm", "ok", "密码已重置，请用新密码登录");
+  } catch (error) {
+    authNotice("resetForm", "err", error.message);
+  }
+});
+
+$("#deleteAccountBtn")?.addEventListener("click", () => {
+  const box = $("#deleteConfirm");
+  box.hidden = !box.hidden;
+});
+bindSendCode("#deleteSendCode", "#profileName", "delete");
+$("#deleteAccountConfirm")?.addEventListener("click", async () => {
+  const password = $("#deletePassword").value;
+  if (!password) return toast("请输入密码确认身份");
+  const payload = { password };
+  if (smsEnabled) {
+    const code = $("#deleteCode").value.trim();
+    if (!code) return toast("请输入短信验证码");
+    payload.code = code;
+  }
+  if (!window.confirm("最后确认：注销后账号与剩余额度将永久删除，无法恢复。确定注销吗？")) return;
+  try {
+    await request("/api/auth/delete-account", { method: "POST", body: JSON.stringify(payload) });
+    localStorage.removeItem(TOKEN_KEY);
+    authState.user = null;
+    closeAuth();
+    renderAccount();
+    renderProfileForm();
+    toast("账号已注销，感谢体验 ImageCraft");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 request("/api/status").then((status) => {
+  smsEnabled = Boolean(status.sms);
+  applySmsVisibility();
   const pill = $(".mode-pill");
   if (!pill) return;
   const live = status.mode === "live";

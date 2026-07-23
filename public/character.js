@@ -1,3 +1,9 @@
+// HTTP 环境下 crypto.randomUUID 不可用(仅限安全上下文),提供降级
+function safeId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return crypto.randomUUID();
+  return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
 const $ = (selector) => document.querySelector(selector);
 const profiles = {
   meimei: { enabled: true, archetype: "custom", name: "咩咩", proportion: "natural", preserve: "hair-face", outfit: "original", signature: "hairpin", personality: "温柔、专注、安静好奇", custom: "极简黑白手绘女性角色；始终保留高盘发、额前弧形碎发和两侧松散发丝；只使用少量橙色点缀", referenceUrl: "/characters/meimei.png" },
@@ -105,8 +111,16 @@ function render() {
 }
 
 async function request(url, options) {
-  const response = await fetch(url, { ...options, headers: { "content-type": "application/json" } });
-  const data = await response.json(); if (!response.ok) throw new Error(data.error || "生成失败"); return data;
+  const token = localStorage.getItem("imagecraft-token");
+  const auth = token ? { authorization: `Bearer ${token}` } : {};
+  const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...auth } });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || "生成失败");
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
 $("#characterForm").addEventListener("input", render);
@@ -146,14 +160,14 @@ $("#generateCharacter").addEventListener("click", async () => {
       $("#generationStatus").textContent = "正在根据照片生成角色定妆图…";
       result = await request("/api/character/simple", { method: "POST", body: JSON.stringify({ image: await fileAsDataUrl(file), settings: character }) });
     } else {
-      const shot = { id: crypto.randomUUID(), title: `${character.name}角色定妆图`, coreIdea: "建立一个可反复用于中文文章插图的角色视觉设定", structure: "角色状态", action: "角色独自站在画面中央，正面、侧面和一个核心工作动作以松散角色设定稿方式呈现", labels: [character.name, "正面", "动作"] };
+      const shot = { id: safeId(), title: `${character.name}角色定妆图`, coreIdea: "建立一个可反复用于中文文章插图的角色视觉设定", structure: "角色状态", action: "角色独自站在画面中央，正面、侧面和一个核心工作动作以松散角色设定稿方式呈现", labels: [character.name, "正面", "动作"] };
       result = await request("/api/generate", { method: "POST", body: JSON.stringify({ shot, style: { preset: "xiaohei", line: "fine", background: "white", whitespace: "balanced", accent: "#ff6b20", character } }) });
     }
     generatedCharacterUrl = result.url;
     const target = $("#generatedCharacter"); target.hidden = false; target.innerHTML = `<img src="${result.url}" alt="${character.name}角色定妆图" /><a href="${result.url}" download="character-${character.name}.png">下载定妆图 ↓</a>`;
     $("#saveCharacter").hidden = false;
     $("#generationStatus").textContent = "角色定妆照已生成。满意后点击“保存到我的角色库”，首页生成配图时会自动使用它。";
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.status === 401 ? "请先回首页登录,再来生成角色" : error.message); }
   finally { button.disabled = false; render(); }
 });
 
